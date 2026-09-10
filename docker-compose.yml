@@ -9,11 +9,31 @@ services:
       - ./database/redis.conf:/usr/local/etc/redis/redis.conf:ro
     command: redis-server /usr/local/etc/redis/redis.conf
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "StrongRedisPassword123!", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 5s
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: gamma-postgres
+    environment:
+      POSTGRES_DB: leaderboard
+      POSTGRES_USER: leaderboard_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/002_create_leaderboard_snapshot.sql:/docker-entrypoint-initdb.d/002_create_leaderboard_snapshot.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U leaderboard_user -d leaderboard"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
 
   fastapi:
@@ -29,8 +49,15 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       APP_ENV: production
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: leaderboard
+      POSTGRES_USER: leaderboard_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -42,4 +69,6 @@ services:
 
 volumes:
   redis_data:
+    driver: local
+  postgres_data:
     driver: local

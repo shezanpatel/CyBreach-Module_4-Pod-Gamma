@@ -1,248 +1,74 @@
-# Redis Leaderboard Backend — Pod Gamma
+# Redis Leaderboard Backend
 
-## Overview
+Containerized Redis-backed leaderboard service using FastAPI, Redis 7, and PostgreSQL 16.
 
-This branch contains the **Redis Leaderboard Backend** for the CyBreach Module 4 Pod Gamma project.
+## Features
 
-The backend is responsible for Redis-based leaderboard storage and operations, including:
+- Redis-backed leaderboard operations
+- FastAPI REST API
+- Tenant and consent validation
+- Improvement rankings
+- PostgreSQL leaderboard snapshots
+- Historical tenant anonymization
+- Docker Compose deployment
+- Health checks
+- Pytest test suite
 
-- Redis connection management
-- Connection pooling
-- Redis Sorted Set (ZSET) leaderboard operations
-- Player score management
-- Player ranking
-- Improvement-based ranking
-- Tenant/consent contract handling
-- Input validation
-- Database snapshot/migration support
-- Automated testing
-- Structured logging and performance-oriented operations
+## Requirements
 
-The backend is designed to be consumed by the API layer rather than tightly coupling Redis implementation details to the API.
+- Git
+- Docker Desktop
+- Docker Compose
+- Python 3.13+
 
----
+Check installation:
 
-# What I Implemented
-
-The `feature/gamma-redis-core` branch contains the Redis backend work completed for this module.
-
-### Core Redis functionality
-
-The backend provides:
-
-- Redis client and connection management
-- Redis authentication through environment variables
-- Connection pooling
-- Leaderboard storage using Redis Sorted Sets (`ZSET`)
-- Score insertion and updates
-- Score increment operations
-- Leaderboard retrieval
-- Player rank retrieval
-- Player deletion
-- Leaderboard reset
-
-### Improvement ranking
-
-An improvement-ranking service was added through:
-
-```text
-app/services/improvement_service.py
+```powershell
+git --version
+docker --version
+docker compose version
+python --version
 ```
 
-This provides functionality for calculating and retrieving leaderboard improvement information rather than relying only on absolute leaderboard scores.
+## Clone
 
-### Tenant contract / consent
-
-Tenant-related contract handling was added through:
-
-```text
-app/tenant_contract.py
+```powershell
+git clone https://github.com/shezanpatel/CyBreach-Module_4-Pod-Gamma.git
+cd CyBreach-Module_4-Pod-Gamma
+git checkout feature/gamma-redis-core
 ```
 
-This provides the contract layer required for tenant-specific behavior and consent handling.
-
-### Database changes
-
-Two database SQL scripts were added:
+## Project Structure
 
 ```text
-database/001_sanitize_leaderboard_snapshot.sql
-database/002_create_leaderboard_snapshot.sql
+app/
+  api/leaderboard.py
+  models/schemas.py
+  services/improvement_service.py
+  tenant_contract.py
+  main.py
+database/
+  001_sanitize_leaderboard_snapshot.sql
+  002_create_leaderboard_snapshot.sql
+  redis.conf
+tests/
+Dockerfile
+docker-compose.yml
+.env.example
+requirements.txt
+README.md
 ```
 
-These provide database-side support for leaderboard snapshot handling.
+## Environment Setup
 
-### Testing
+Create the local environment file:
 
-Additional improvement-ranking tests were added:
-
-```text
-tests/test_improvement.py
+```powershell
+Copy-Item .env.example .env
+notepad .env
 ```
 
-The current test suite passes successfully.
-
----
-
-# Project Structure
-
-```text
-pod-gamma-platform/
-│
-├── app/
-│   ├── api/
-│   │   └── leaderboard.py
-│   ├── db/
-│   │   └── redis_client.py
-│   ├── models/
-│   │   └── schemas.py
-│   ├── services/
-│   │   ├── leaderboard_service.py
-│   │   └── improvement_service.py
-│   ├── utils/
-│   │   ├── benchmark.py
-│   │   └── logger.py
-│   ├── tenant_contract.py
-│   ├── config.py
-│   ├── exceptions.py
-│   └── main.py
-│
-├── database/
-│   ├── 001_sanitize_leaderboard_snapshot.sql
-│   └── 002_create_leaderboard_snapshot.sql
-│
-├── tests/
-│   ├── test_leaderboard.py
-│   ├── test_improvement.py
-│   └── ...
-│
-├── docs/
-│   ├── integration_guide.md
-│   └── redis_module.md
-│
-├── .env.example
-├── .gitignore
-├── Dockerfile
-├── docker-compose.yml
-├── pytest.ini
-└── requirements.txt
-```
-
----
-
-# Architecture
-
-```text
-             API Layer
-                 │
-                 ▼
-        ┌──────────────────┐
-        │ Leaderboard API  │
-        │ leaderboard.py   │
-        └────────┬─────────┘
-                 │
-                 ▼
-        ┌──────────────────┐
-        │ Service Layer    │
-        │                  │
-        │ Leaderboard      │
-        │ Improvement      │
-        └────────┬─────────┘
-                 │
-          ┌──────┴──────┐
-          ▼             ▼
-      Redis ZSET     Tenant Contract
-          │
-          ▼
-    Leaderboard Data
-```
-
-The API layer does not need to directly implement Redis commands. It can call the service layer.
-
----
-
-# Redis Leaderboard
-
-The leaderboard uses a Redis **Sorted Set (`ZSET`)**.
-
-Conceptually:
-
-```text
-leaderboard:global
-
-player_1 → 150
-player_2 → 125
-player_3 → 100
-```
-
-The Redis score determines the player's position in the leaderboard.
-
-The service layer supports:
-
-```text
-LeaderboardService.set_score()
-LeaderboardService.increment_score()
-LeaderboardService.get_top_players()
-LeaderboardService.get_rank()
-LeaderboardService.delete_user()
-LeaderboardService.reset_leaderboard()
-```
-
----
-
-# Improvement Ranking
-
-In addition to absolute leaderboard scores, the backend contains an improvement-ranking service.
-
-Implementation:
-
-```text
-app/services/improvement_service.py
-```
-
-The purpose is to allow the application to distinguish between current performance and improvement over time, rather than treating leaderboard position as the only measure of progress.
-
----
-
-# Tenant Contract and Consent
-
-Tenant-specific behavior is separated into:
-
-```text
-app/tenant_contract.py
-```
-
-This provides a contract layer for handling tenant-related requirements and consent information.
-
-The goal is to keep tenant-specific rules separate from the underlying Redis implementation.
-
----
-
-# Database Migrations
-
-The branch contains:
-
-### 001 — Sanitize leaderboard snapshot
-
-```text
-database/001_sanitize_leaderboard_snapshot.sql
-```
-
-### 002 — Create leaderboard snapshot
-
-```text
-database/002_create_leaderboard_snapshot.sql
-```
-
-Apply these according to the database setup used by the complete Pod Gamma deployment.
-
----
-
-# Configuration
-
-Create a local `.env` file based on `.env.example`.
-
-Example:
+Example configuration:
 
 ```env
 APP_NAME=Redis Leaderboard Engine
@@ -254,384 +80,309 @@ LOG_LEVEL=INFO
 REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_DB=0
-REDIS_PASSWORD=your_redis_password
+REDIS_PASSWORD=your_redis_password_here
+REDIS_MAX_CONNECTIONS=50
 REDIS_SOCKET_TIMEOUT=5.0
 REDIS_SOCKET_CONNECT_TIMEOUT=5.0
-REDIS_MAX_CONNECTIONS=50
 REDIS_LEADERBOARD_KEY=leaderboard:global
 
-API_KEY=your_api_key
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=leaderboard
+POSTGRES_USER=leaderboard_user
+POSTGRES_PASSWORD=your_postgres_password_here
+
+API_KEY=your_api_key_here
 CORS_ORIGINS=http://localhost:3000
 RATE_LIMIT_PER_MINUTE=20
 ```
 
-**Do not commit `.env` or real credentials to Git.**
+Never commit `.env`. Keep real passwords and API keys out of `.env.example`.
 
----
+## Docker Setup
 
-# Running the Project
-
-## 1. Clone the repository
-
-```powershell
-git clone https://github.com/shezanpatel/CyBreach-Module_4-Pod-Gamma.git
-cd CyBreach-Module_4-Pod-Gamma
-git checkout feature/gamma-redis-core
-```
-
-## 2. Create a virtual environment
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-## 3. Install dependencies
-
-```powershell
-python -m pip install -r requirements.txt
-```
-
----
-
-# Start Redis
-
-Start the Docker services:
+Start all services:
 
 ```powershell
 docker compose up -d
 ```
 
-Check the containers:
+Build and start:
 
 ```powershell
-docker compose ps
+docker compose up -d --build
 ```
 
----
+Services:
 
-# Configure Environment Variables
+| Service | Container | Port |
+|---|---|---:|
+| Redis | redis-leaderboard-redis | 6379 |
+| PostgreSQL | gamma-postgres | 5432 |
+| FastAPI | redis-leaderboard-api | 8000 |
 
-For local PowerShell development:
+Check containers:
 
 ```powershell
-$env:API_KEY="dev-test-api-key"
-$env:REDIS_PASSWORD="StrongRedisPassword123!"
+docker ps
 ```
 
-Verify:
+View logs:
 
 ```powershell
-echo $env:API_KEY
-echo $env:REDIS_PASSWORD
+docker compose logs -f fastapi
+docker compose logs -f redis
+docker compose logs -f postgres
 ```
 
-For persistent local configuration, use `.env`.
-
----
-
-# Run the Application
-
-Start FastAPI:
+Stop containers without deleting data:
 
 ```powershell
-python -m uvicorn app.main:app --reload
+docker compose down
 ```
 
-Application:
+Do not use `docker compose down -v` unless you intentionally want to delete Redis and PostgreSQL data.
+
+## FastAPI
+
+API base URL:
 
 ```text
 http://localhost:8000
 ```
 
-Interactive API documentation:
+Swagger:
 
 ```text
 http://localhost:8000/docs
 ```
 
----
-
-# Run Tests
-
-Run the complete test suite:
-
-```powershell
-python -m pytest -q
-```
-
-Current verification:
+ReDoc:
 
 ```text
-37 passed
-1 warning
+http://localhost:8000/redoc
 ```
 
-The warning is a Starlette/httpx test-client deprecation warning and does not currently cause test failure.
+Health check:
 
----
+```powershell
+Invoke-WebRequest http://localhost:8000/health -UseBasicParsing
+```
 
-# Testing Workflow
+Expected response:
 
-After making changes:
+```json
+{"status":"healthy","redis":"connected","app":"running"}
+```
+
+Alternatively:
+
+```powershell
+curl.exe http://localhost:8000/health
+```
+
+## Redis Verification
+
+```powershell
+docker exec -it redis-leaderboard-redis redis-cli -a "YOUR_REDIS_PASSWORD" ping
+```
+
+Expected:
+
+```text
+PONG
+```
+
+Redis configuration is stored in:
+
+```text
+database/redis.conf
+```
+
+## PostgreSQL Verification
+
+Connect:
+
+```powershell
+docker exec -it gamma-postgres psql -U leaderboard_user -d leaderboard
+```
+
+Check connection:
+
+```powershell
+docker exec -it gamma-postgres psql -U leaderboard_user -d leaderboard -c "SELECT current_database(), current_user, version();"
+```
+
+Check schema:
+
+```powershell
+docker exec -it gamma-postgres psql -U leaderboard_user -d leaderboard -c "\d leaderboard_snapshot"
+```
+
+The snapshot table contains:
+
+- snapshot_id
+- tenant_id
+- dimension
+- dimension_value
+- score
+- delta
+- rank
+- snapshot_date
+
+## Database Scripts
+
+Create the snapshot table using:
+
+```text
+database/002_create_leaderboard_snapshot.sql
+```
+
+The operational anonymization script is:
+
+```text
+database/001_sanitize_leaderboard_snapshot.sql
+```
+
+Example anonymization:
+
+```sql
+BEGIN;
+
+UPDATE leaderboard_snapshot
+SET tenant_id = 'ANON-' || substr(md5(tenant_id), 1, 16)
+WHERE tenant_id = 'CORP-001';
+
+COMMIT;
+```
+
+The anonymization preserves historical ranking fields.
+
+## Local Python Setup
+
+Docker is recommended. For local execution:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+Start FastAPI:
+
+```powershell
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+For local execution use:
+
+```env
+REDIS_HOST=localhost
+POSTGRES_HOST=localhost
+```
+
+Inside Docker Compose, use:
+
+```env
+REDIS_HOST=redis
+POSTGRES_HOST=postgres
+```
+
+## Tests
+
+Run all tests:
 
 ```powershell
 python -m pytest -q
+```
+
+Run a specific test file:
+
+```powershell
+python -m pytest tests/test_improvement.py -v
+```
+
+## Functional Verification
+
+```powershell
+docker ps
+docker compose config
+Invoke-WebRequest http://localhost:8000/health -UseBasicParsing
+docker exec -it gamma-postgres psql -U leaderboard_user -d leaderboard -c "SELECT current_database(), current_user;"
+python -m pytest -q
+```
+
+The expected test result is all tests passing.
+
+## Troubleshooting
+
+### Redis healthcheck fails
+
+```powershell
+docker compose logs redis
+docker compose restart redis
+```
+
+Confirm that the password in `.env` and `database/redis.conf` is consistent.
+
+### PostgreSQL is not ready
+
+```powershell
+docker compose logs postgres
+docker compose restart postgres
+```
+
+### Port conflict
+
+```powershell
+netstat -ano | findstr :8000
+netstat -ano | findstr :6379
+netstat -ano | findstr :5432
+```
+
+### FastAPI cannot connect to services
+
+Inside Docker, use service names `redis` and `postgres`, not `localhost`.
+
+### PowerShell curl warning
+
+Use:
+
+```powershell
+Invoke-WebRequest http://localhost:8000/health -UseBasicParsing
+```
+
+or:
+
+```powershell
+curl.exe http://localhost:8000/health
+```
+
+## Git Workflow
+
+```powershell
 git status
-git diff --cached --check
+git add README.md
+git commit -m "docs: update docker and environment setup"
+git push team-main feature/gamma-redis-core
 ```
 
-The working tree should be clean after committing.
+Do not stage `.env`.
 
----
+## Production Notes
 
-# Git Branch
+Before production:
 
-The Redis backend implementation is maintained on:
+- Replace all development passwords.
+- Remove hard-coded secrets from Compose files.
+- Use Docker secrets or a secret manager.
+- Restrict Redis and PostgreSQL network access.
+- Enable HTTPS/TLS.
+- Configure production CORS.
+- Use strong API keys.
+- Add backups, monitoring, and centralized logging.
 
-```text
-feature/gamma-redis-core
-```
+## License
 
-The branch contains the Redis backend work and the tenant/improvement-ranking implementation.
-
-It can later be merged into the team's main integration branch when the other Pod Gamma components are ready.
-
----
-
-# Integration With the API Team
-
-The API layer should use the service layer rather than directly accessing Redis.
-
-The service layer exposes:
-
-```text
-LeaderboardService.set_score()
-LeaderboardService.increment_score()
-LeaderboardService.get_top_players()
-LeaderboardService.get_rank()
-LeaderboardService.delete_user()
-LeaderboardService.reset_leaderboard()
-```
-
-Integration flow:
-
-```text
-HTTP Request
-     │
-     ▼
-API Endpoint
-     │
-     ▼
-Service Layer
-     │
-     ▼
-Redis Client
-     │
-     ▼
-Redis
-```
-
-This keeps the API and Redis implementation separated.
-
----
-
-# Security
-
-Implemented security-related functionality includes:
-
-- Redis password authentication
-- Environment-based configuration
-- Input validation
-- Username validation
-- Structured logging
-- Tenant/consent contract handling
-
-Secrets such as `REDIS_PASSWORD` and `API_KEY` should never be committed to Git.
-
-The `.gitignore` excludes:
-
-```text
-.env
-.env.*
-```
-
-while allowing:
-
-```text
-.env.example
-```
-
-to be committed.
-
----
-
-# Performance
-
-The Redis backend includes:
-
-- Connection pooling
-- Redis pipelines
-- Bulk operations
-- Batch deletion
-- Redis Sorted Sets
-- Performance benchmarking
-- Latency measurement
-- Structured logging
-
-Redis Sorted Sets provide a natural data structure for leaderboard-style ranking.
-
----
-
-# Verification
-
-The implementation was verified locally using:
-
-```powershell
-python -m pytest -q
-```
-
-Result:
-
-```text
-37 passed
-1 warning
-```
-
-Git verification:
-
-```powershell
-git status
-```
-
-Result:
-
-```text
-nothing to commit, working tree clean
-```
-
-Implementation commit:
-
-```text
-ea952d8 feat: implement tenant consent and improvement rankings
-```
-
----
-
-# Current Status
-
-## Completed
-
-- [x] Redis connection management
-- [x] Redis connection pooling
-- [x] Redis authentication configuration
-- [x] Leaderboard ZSET implementation
-- [x] Score management
-- [x] Ranking operations
-- [x] Player deletion
-- [x] Leaderboard reset
-- [x] Input validation
-- [x] Performance-oriented Redis operations
-- [x] Improvement-ranking service
-- [x] Tenant contract / consent layer
-- [x] Leaderboard snapshot SQL migrations
-- [x] Automated tests
-- [x] `.gitignore` / secret protection
-- [x] Branch pushed to team repository
-
-## Pending Integration
-
-- API gateway integration
-- Final authentication integration
-- Final rate-limiting integration
-- Cross-module integration testing
-- Final deployment configuration
-
----
-
-# Future Improvements
-
-Potential future improvements include:
-
-- Redis Sentinel
-- Redis Cluster
-- Prometheus metrics
-- Grafana monitoring
-- More comprehensive integration tests
-- Production-grade authentication
-- Distributed rate limiting
-- CI/CD test automation
-
----
-
-# Demonstration
-
-Recommended demonstration flow:
-
-### 1. Start Redis
-
-```powershell
-docker compose up -d
-docker compose ps
-```
-
-### 2. Start the application
-
-```powershell
-python -m uvicorn app.main:app --reload
-```
-
-### 3. Open API documentation
-
-```text
-http://localhost:8000/docs
-```
-
-### 4. Demonstrate leaderboard operations
-
-Show:
-
-```text
-Set score
-   ↓
-Increment score
-   ↓
-Retrieve leaderboard
-   ↓
-Retrieve player rank
-```
-
-### 5. Run automated tests
-
-```powershell
-python -m pytest -q
-```
-
-Expected result from the current implementation:
-
-```text
-37 passed
-```
-
-### 6. Explain the architecture
-
-```text
-API
- ↓
-Leaderboard Service
- ↓
-Redis Client
- ↓
-Redis ZSET
-```
-
-This demonstrates both the implementation and its integration boundary with the rest of Pod Gamma.
-
----
-
-# Author
-
-**Pradyumna Pandav**
-
-Redis Backend Module  
-CyBreach – Module 4 – Pod Gamma
+Developed as part of the CyBreach Module 4 Pod Gamma project.

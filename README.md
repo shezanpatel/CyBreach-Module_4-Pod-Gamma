@@ -16,6 +16,7 @@ This branch contains the **API Gateway / Track 2** implementation.
 - Redis-backed API rate limiting
 - PostgreSQL-backed benchmark data
 - Pydantic v2 request validation
+- Automated benchmark integration testing
 
 ---
 
@@ -29,6 +30,8 @@ This branch contains the **API Gateway / Track 2** implementation.
 - Redis
 - NumPy
 - asyncpg
+- HTTPX
+- Pytest
 - Docker / Docker Compose
 
 ---
@@ -37,25 +40,22 @@ This branch contains the **API Gateway / Track 2** implementation.
 
 ```text
 pod-gamma-platform/
-│
 ├── app/
 │   ├── __init__.py
 │   ├── main.py
-│   │
 │   ├── api/
 │   │   ├── benchmark.py
 │   │   └── benchmark_repository.py
-│   │
 │   └── core/
 │       ├── __init__.py
 │       └── rate_limiter.py
-│
 ├── database/
 │   ├── 003_create_benchmark_aggregate.sql
 │   ├── 004_seed_benchmark_aggregate.sql
 │   ├── 005_create_benchmark_historical.sql
 │   └── 006_seed_benchmark_historical.sql
-│
+├── tests/
+│   └── test_benchmark.py
 ├── requirements.txt
 ├── README.md
 └── docker-compose.yml
@@ -112,7 +112,19 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-If installing dependencies individually:
+Main dependencies:
+
+```text
+fastapi==0.110.0
+uvicorn==0.28.0
+redis==5.0.3
+pydantic==2.6.4
+numpy
+httpx==0.27.2
+pytest==9.1.1
+```
+
+If installing individually:
 
 ```cmd
 python -m pip install fastapi==0.110.0
@@ -121,6 +133,8 @@ python -m pip install redis==5.0.3
 python -m pip install pydantic==2.6.4
 python -m pip install numpy
 python -m pip install asyncpg
+python -m pip install httpx==0.27.2
+python -m pip install pytest==9.1.1
 ```
 
 Verify:
@@ -131,6 +145,8 @@ python -m pip show redis
 python -m pip show pydantic
 python -m pip show numpy
 python -m pip show asyncpg
+python -m pip show httpx
+python -m pip show pytest
 ```
 
 ---
@@ -171,8 +187,6 @@ PONG
 
 # 5. Start PostgreSQL
 
-Start the PostgreSQL container:
-
 ```cmd
 docker start cybreach-postgres
 ```
@@ -209,7 +223,7 @@ peer_median
 peer_75th
 ```
 
-Seeded cohorts include examples such as:
+Seeded cohorts include:
 
 ```text
 Technology / West / Large
@@ -221,15 +235,8 @@ Healthcare / West / Large
 
 # 7. Start FastAPI
 
-Activate the virtual environment:
-
 ```cmd
 .venv\Scripts\activate
-```
-
-Start the API:
-
-```cmd
 uvicorn app.main:app --reload
 ```
 
@@ -271,7 +278,7 @@ Expected:
 
 ---
 
-## Benchmark Percentiles
+# Benchmark Percentiles
 
 ```http
 POST /benchmark
@@ -299,6 +306,8 @@ The anonymity threshold is:
 10 peers
 ```
 
+Benchmark cohorts with fewer than 10 peers are blocked to enforce the minimum privacy threshold.
+
 Example test cohort:
 
 ```json
@@ -311,13 +320,21 @@ Example test cohort:
 
 This seeded cohort has fewer than 10 peers.
 
-Expected:
+For the benchmark comparison privacy guardrail, the expected response is:
 
 ```text
-HTTP 422
+HTTP 403
 ```
 
-with an insufficient-peer error.
+with:
+
+```json
+{
+  "detail": "insufficient peers"
+}
+```
+
+A cohort with at least 10 peers can continue to the benchmark comparison logic.
 
 ---
 
@@ -368,6 +385,26 @@ Global median   = 72.0
 Difference = 4.4
 ```
 
+## Privacy Threshold
+
+If the regional cohort has fewer than 10 peers:
+
+```text
+HTTP 403
+```
+
+Example response:
+
+```json
+{
+  "detail": "insufficient peers"
+}
+```
+
+The same privacy threshold is applied when the global benchmark cohort does not meet the minimum peer requirement.
+
+The OpenAPI documentation also exposes the `403` response for this endpoint.
+
 ---
 
 # Historical Benchmark Trends
@@ -376,7 +413,7 @@ Difference = 4.4
 GET /benchmark/trend/TENANT-001
 ```
 
-The endpoint provides historical benchmark percentile information for periods such as:
+The endpoint provides historical benchmark percentile information for:
 
 ```text
 30 days
@@ -421,9 +458,7 @@ Configured limit:
 20 requests per minute
 ```
 
-Redis stores request counters using time-based keys.
-
-Example:
+Redis stores request counters using time-based keys:
 
 ```text
 rate_limit:<client_ip>:<minute>
@@ -437,13 +472,11 @@ Clear Redis counters:
 docker exec cybreach-redis redis-cli FLUSHDB
 ```
 
-Send requests to the endpoint protected by the rate limiter.
-
 Expected:
 
 ```text
-Requests 1–20  → Allowed
-Request 21     → HTTP 429
+Requests 1-20  → Allowed
+Request 21      → HTTP 429
 ```
 
 Expected error:
@@ -480,6 +513,52 @@ The response follows FastAPI's standard validation error schema.
 
 ---
 
+# Automated Integration Tests
+
+Track 2 includes automated integration tests for the benchmark comparison endpoint.
+
+Tests are located at:
+
+```text
+tests/test_benchmark.py
+```
+
+Run benchmark tests:
+
+```cmd
+python -m pytest tests\test_benchmark.py -v
+```
+
+The tests verify:
+
+- Cohorts with fewer than 10 peers return HTTP 403
+- Valid cohorts with at least 10 peers return HTTP 200
+
+Expected:
+
+```text
+tests/test_benchmark.py::test_benchmark_compare_insufficient_peers PASSED
+tests/test_benchmark.py::test_benchmark_compare_valid_cohort PASSED
+
+2 passed
+```
+
+Run the complete test suite:
+
+```cmd
+python -m pytest -v
+```
+
+Expected:
+
+```text
+2 passed
+```
+
+The HTTPX/Starlette TestClient combination may display a deprecation warning. This warning does not indicate a test failure.
+
+---
+
 # Testing Checklist
 
 Before submitting changes, verify:
@@ -490,20 +569,21 @@ Before submitting changes, verify:
 [ ] FastAPI starts successfully
 [ ] Swagger UI opens
 [ ] Pydantic validation returns HTTP 422
-[ ] Peer group < 10 is rejected
+[ ] Peer group < 10 is rejected with HTTP 403
 [ ] Peer group >= 10 returns benchmark statistics
 [ ] Differential privacy is applied
 [ ] Cross-regional comparison works
+[ ] /benchmark/compare returns HTTP 403 for insufficient peers
+[ ] /benchmark/compare returns HTTP 200 for valid cohorts
 [ ] Historical trend endpoint works
 [ ] Redis rate limiting works
 [ ] 21st request returns HTTP 429
+[ ] Automated benchmark tests pass
 ```
 
 ---
 
 # Compile Check
-
-Run:
 
 ```cmd
 python -m compileall app
@@ -536,13 +616,13 @@ git add .
 Commit:
 
 ```cmd
-git commit -m "docs: add API Gateway setup and testing guide"
+git commit -m "fix: return 403 for insufficient benchmark peers"
 ```
 
-Push:
+Push to the team repository:
 
 ```cmd
-git push origin feature/gamma-api-gateway
+git push team-main feature/gamma-api-gateway
 ```
 
 ---
@@ -590,6 +670,32 @@ python -m compileall app
 uvicorn app.main:app --reload
 ```
 
+## TestClient compatibility error
+
+If `TestClient` reports an error involving the `app` argument:
+
+```cmd
+python -m pip show httpx
+```
+
+Expected:
+
+```text
+Version: 0.27.2
+```
+
+If required:
+
+```cmd
+python -m pip install httpx==0.27.2
+```
+
+Then:
+
+```cmd
+python -m pytest -v
+```
+
 ## Port 6379 already in use
 
 ```cmd
@@ -617,12 +723,14 @@ This branch provides the API Gateway functionality required for the benchmark pl
 
 1. PostgreSQL-backed benchmark data
 2. Minimum peer-group enforcement
-3. Differential privacy for benchmark percentiles
-4. Cross-regional comparison
-5. Historical benchmark trends
-6. Redis-backed rate limiting
-7. Pydantic v2 request validation
-8. Docker-based Redis and PostgreSQL services
+3. HTTP 403 privacy suppression for insufficient benchmark cohorts
+4. Differential privacy for benchmark percentiles
+5. Cross-regional comparison
+6. Historical benchmark trends
+7. Redis-backed rate limiting
+8. Pydantic v2 request validation
+9. Automated benchmark integration tests
+10. Docker-based Redis and PostgreSQL services
 
 ---
 
@@ -634,4 +742,4 @@ feature/gamma-api-gateway
 
 ## Status
 
-Track 2 API Gateway implementation and testing completed.
+Track 2 API Gateway implementation, privacy enforcement, documentation, and automated testing completed.

@@ -28,6 +28,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/002_create_leaderboard_snapshot.sql:/docker-entrypoint-initdb.d/002_create_leaderboard_snapshot.sql:ro
+      - ./database/003_create_benchmark_aggregate.sql:/docker-entrypoint-initdb.d/003_create_benchmark_aggregate.sql:ro
+      - ./database/004_create_badge_awards.sql:/docker-entrypoint-initdb.d/004_create_badge_awards.sql:ro
+      - ./database/005_seed_benchmark_aggregate.sql:/docker-entrypoint-initdb.d/005_seed_benchmark_aggregate.sql:ro
+      - ./database/006_create_benchmark_historical.sql:/docker-entrypoint-initdb.d/006_create_benchmark_historical.sql:ro
+      - ./database/007_seed_benchmark_historical.sql:/docker-entrypoint-initdb.d/007_seed_benchmark_historical.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U leaderboard_user -d leaderboard"]
       interval: 10s

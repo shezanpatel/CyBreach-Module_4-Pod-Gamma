@@ -1,7 +1,7 @@
 import math
 import random
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.api.benchmark_repository import (
@@ -252,6 +252,18 @@ async def create_benchmark(
 @router.post(
     "/compare",
     response_model=RegionalComparisonResponse,
+    responses={
+        403: {
+            "description": "Cohort has fewer than 10 peers",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "insufficient peers"
+                    }
+                }
+            },
+        }
+    },
 )
 async def compare_regional_benchmark(
     request: RegionalComparisonRequest,
@@ -284,7 +296,7 @@ async def compare_regional_benchmark(
 
     if regional_peer_count < MIN_PEER_GROUP_SIZE:
         raise HTTPException(
-            status_code=422,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="insufficient peers",
         )
 
@@ -316,7 +328,7 @@ async def compare_regional_benchmark(
 
     if global_peer_count < MIN_PEER_GROUP_SIZE:
         raise HTTPException(
-            status_code=422,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="insufficient peers",
         )
 

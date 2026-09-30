@@ -50,7 +50,7 @@ def test_completion_between_24_and_48_hours_increases_streak():
 
     assert updated_user.current_streak == 2
     assert updated_user.last_completion_time == current_time      
-def test_completion_under_24_hours_is_ignored():
+def test_completion_over_48_hours_resets_streak():
     start_time = datetime(2026, 7, 10, 10, 0)
 
     user = UserProfile(

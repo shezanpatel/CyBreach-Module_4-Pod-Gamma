@@ -10,7 +10,6 @@ from app.api.benchmark_repository import (
     get_global_benchmark,
 )
 
-
 router = APIRouter(
     prefix="/benchmark",
     tags=["benchmark"],
@@ -27,6 +26,9 @@ MIN_PEER_GROUP_SIZE = 10
 # PG-26
 EPSILON = 1.0
 SENSITIVITY = 100.0
+
+# Section 2 / Section 11.7
+DEMO_DATA_LABEL = "seeded demo baseline"
 
 
 # ============================================================
@@ -59,14 +61,22 @@ class RegionalComparisonRequest(BaseModel):
 # Response Schemas
 # ============================================================
 
-class BenchmarkResponse(BaseModel):
-    industry: str
-    region: str
-    size_band: str
-    peer_count: int
-    peer_25th: float
+class BenchmarkResult(BaseModel):
+    """
+    Flat BenchmarkResult contract required by Pod Delta.
+
+    Synthetic benchmark data is explicitly labelled as
+    'seeded demo baseline'.
+    """
+
+    tenant_id: str
+    percentile: float
     peer_median: float
+    peer_25th: float
     peer_75th: float
+    peer_count: int
+    trend: list
+    label: str = DEMO_DATA_LABEL
 
 
 class RegionalComparisonResponse(BaseModel):
@@ -138,23 +148,31 @@ def apply_laplace_noise(value: float) -> float:
 # ============================================================
 # POST /benchmark
 #
-# Existing benchmark endpoint
-#
 # Flow:
-# Client -> cohort information
-#        -> benchmark aggregate
-#        -> PG-27 N >= 10
-#        -> PG-26 Laplace noise
-#        -> response
+#
+# Client
+#   |
+#   | { industry, region, size_band }
+#   v
+# benchmark_aggregate
+#   |
+#   v
+# PG-27: peer_count >= 10
+#   |
+#   v
+# PG-26: Laplace noise
+#   |
+#   v
+# Flat BenchmarkResult
 # ============================================================
 
 @router.post(
     "",
-    response_model=BenchmarkResponse,
+    response_model=BenchmarkResult,
 )
 async def create_benchmark(
     request: BenchmarkRequest,
-) -> BenchmarkResponse:
+) -> BenchmarkResult:
 
     # --------------------------------------------------------
     # Step 1: Query benchmark aggregate
@@ -217,17 +235,39 @@ async def create_benchmark(
     )
 
     # --------------------------------------------------------
-    # Step 4: Return privacy-preserving benchmark
+    # Step 4: Build flat BenchmarkResult
+    #
+    # The current seeded demo repository contains aggregate
+    # cohort data rather than individual tenant scores.
+    #
+    # Therefore:
+    # - tenant_id identifies the seeded demo cohort
+    # - percentile uses the cohort median as the demo
+    #   percentile position
+    # - trend starts empty because historical trend is exposed
+    #   separately through /benchmark/trend/{tenant_id}
     # --------------------------------------------------------
 
-    return BenchmarkResponse(
-        industry=peer["industry"],
-        region=peer["region"],
-        size_band=peer["size_band"],
-        peer_count=peer_count,
-        peer_25th=noisy_25th,
+    demo_tenant_id = (
+        f"{peer['industry']}-"
+        f"{peer['region']}-"
+        f"{peer['size_band']}"
+    )
+
+    demo_percentile = round(
+        float(peer["peer_median"]),
+        2,
+    )
+
+    return BenchmarkResult(
+        tenant_id=demo_tenant_id,
+        percentile=demo_percentile,
         peer_median=noisy_median,
+        peer_25th=noisy_25th,
         peer_75th=noisy_75th,
+        peer_count=peer_count,
+        trend=[],
+        label=DEMO_DATA_LABEL,
     )
 
 
@@ -340,9 +380,6 @@ async def compare_regional_benchmark(
 
     # --------------------------------------------------------
     # Step 5: Calculate regional vs global difference
-    #
-    # Difference:
-    # Regional Median - Global Median
     # --------------------------------------------------------
 
     regional_median = float(

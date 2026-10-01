@@ -9,6 +9,16 @@ import redis
 
 from app.config import Settings, get_settings
 from app.db.redis_client import get_redis
+from app.tenant_contract import (
+    validate_tenant_id,
+    validate_industry,
+    validate_region,
+    validate_size,
+    industry_key,
+    region_key,
+    size_key,
+    tenant_members_key,
+)
 from app.exceptions import (
     InvalidScoreError,
     NegativeScoreError,
@@ -129,6 +139,57 @@ class LeaderboardService:
         except redis.RedisError as exc:
             self._handle_redis_error("ZADD", exc)
             raise  # unreachable; satisfies type checker
+    def set_tenant_score(
+        self,
+        username: str,
+        score: float,
+        tenant_id: str,
+        industry: str,
+        region: str,
+        size: str,
+    ) -> float:
+        """Set a tenant score across all absolute leaderboards."""
+        username = self._validate_username(username)
+        validated_score = self._validate_score(score)
+
+        try:
+            tenant_id = validate_tenant_id(tenant_id)
+            industry = validate_industry(industry)
+            region = validate_region(region)
+            size = validate_size(size)
+        except ValueError as exc:
+            raise InvalidScoreError(
+                str(exc),
+                details={"tenant_id": tenant_id},
+            ) from exc
+
+        try:
+            pipe = self.redis.pipeline(transaction=True)
+
+            # Preserve the existing configured global leaderboard.
+            pipe.zadd(self.key, {username: validated_score})
+
+            # Update the tenant's industry, region, and size leaderboards.
+            pipe.zadd(industry_key(industry), {username: validated_score})
+            pipe.zadd(region_key(region), {username: validated_score})
+            pipe.zadd(size_key(size), {username: validated_score})
+
+            # Record the tenant's membership.
+            pipe.sadd(tenant_members_key(tenant_id), username)
+
+            pipe.execute()
+
+            logger.info(
+                "Tenant score set | tenant=%s user=%s score=%s",
+                tenant_id,
+                username,
+                validated_score,
+            )
+            return validated_score
+
+        except redis.RedisError as exc:
+            self._handle_redis_error("TENANT_SCORE_UPDATE", exc)
+            raise
 
     # ------------------------------------------------------------------
     # Bulk Operations

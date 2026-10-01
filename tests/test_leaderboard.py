@@ -9,7 +9,13 @@ from fastapi.testclient import TestClient
 
 from app.exceptions import NegativeScoreError, UserNotFoundError
 from app.services.leaderboard_service import LeaderboardService
-
+from app.exceptions import InvalidScoreError, NegativeScoreError, UserNotFoundError
+from app.tenant_contract import (
+    industry_key,
+    region_key,
+    size_key,
+    tenant_members_key,
+)
 
 class TestSetScore:
     """Tests for POST /score."""
@@ -248,3 +254,87 @@ class TestServiceEdgeCases:
         client.post("/score", json={"username": "  spaced  ", "score": 500})
         response = client.get("/rank/spaced")
         assert response.status_code == 200
+class TestTenantScore:
+    """Tests for tenant-aware leaderboard updates."""
+
+    def test_updates_all_absolute_leaderboards(
+        self,
+        service: LeaderboardService,
+    ) -> None:
+        service.set_tenant_score(
+            username="tenant_user",
+            score=1500,
+            tenant_id="CORP-001",
+            industry="technology",
+            region="europe",
+            size="1-50",
+        )
+
+        assert service.redis.zscore(service.key, "tenant_user") == 1500
+        assert service.redis.zscore(
+            industry_key("technology"), "tenant_user"
+        ) == 1500
+        assert service.redis.zscore(
+            region_key("europe"), "tenant_user"
+        ) == 1500
+        assert service.redis.zscore(
+            size_key("1-50"), "tenant_user"
+        ) == 1500
+
+    def test_records_tenant_membership(
+        self,
+        service: LeaderboardService,
+    ) -> None:
+        service.set_tenant_score(
+            username="tenant_user",
+            score=1500,
+            tenant_id="CORP-001",
+            industry="technology",
+            region="europe",
+            size="1-50",
+        )
+
+        assert service.redis.sismember(
+            tenant_members_key("CORP-001"), "tenant_user"
+        )
+
+    def test_updates_existing_tenant_score(
+        self,
+        service: LeaderboardService,
+    ) -> None:
+        service.set_tenant_score(
+            username="tenant_user",
+            score=1000,
+            tenant_id="CORP-001",
+            industry="technology",
+            region="europe",
+            size="1-50",
+        )
+
+        service.set_tenant_score(
+            username="tenant_user",
+            score=2000,
+            tenant_id="CORP-001",
+            industry="technology",
+            region="europe",
+            size="1-50",
+        )
+
+        assert service.redis.zscore(service.key, "tenant_user") == 2000
+        assert service.redis.zscore(
+            industry_key("technology"), "tenant_user"
+        ) == 2000
+
+    def test_rejects_invalid_tenant_id(
+        self,
+        service: LeaderboardService,
+    ) -> None:
+        with pytest.raises(InvalidScoreError):
+            service.set_tenant_score(
+                username="tenant_user",
+                score=1500,
+                tenant_id="INVALID",
+                industry="technology",
+                region="europe",
+                size="1-50",
+            )

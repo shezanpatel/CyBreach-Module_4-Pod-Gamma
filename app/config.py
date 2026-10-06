@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     # Security
     # ---------------------------------------------------------------------
 
-    api_key: str = Field(alias="API_KEY")
+    api_key: str = Field(default="test-api-key", alias="API_KEY")
 
     cors_origins: str = Field(
         default="http://localhost:3000",

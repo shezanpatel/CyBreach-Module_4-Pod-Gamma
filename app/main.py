@@ -219,3 +219,7 @@ async def verify_streak(payload: StreakVerificationPayload):
         "elapsed_days": elapsed_days,
     }
 app.include_router(leaderboard_router)
+
+
+def create_app():
+    return app

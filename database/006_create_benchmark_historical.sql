@@ -9,5 +9,5 @@ CREATE TABLE IF NOT EXISTS benchmark_historical (
     snapshot_date DATE NOT NULL,
 
     CONSTRAINT uq_benchmark_historical_tenant_snapshot
-        UNIQUE (tenant_id, snapshot_date)
+    	UNIQUE (tenant_id, snapshot_date)
 );

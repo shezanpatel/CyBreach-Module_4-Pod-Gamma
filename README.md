@@ -1,745 +1,279 @@
-# CyBreach Pod Gamma Platform — API Gateway
+# CyBreach Module 4 — Pod Gamma Service
 
-## Overview
+Pod Gamma delivers real-time scoring analytics, high-velocity leaderboard aggregation, cohort benchmarking, user activity streaks, and badge achievement verification for the CyBreach platform.
 
-CyBreach Pod Gamma Platform is a cybersecurity benchmarking and analytics platform.
-
-This branch contains the **API Gateway / Track 2** implementation.
-
-### Track 2 responsibilities
-
-- Benchmark API endpoints
-- Differential privacy for benchmark statistics
-- Minimum peer-group enforcement
-- Cross-regional benchmark comparison
-- Historical benchmark trends
-- Redis-backed API rate limiting
-- PostgreSQL-backed benchmark data
-- Pydantic v2 request validation
-- Automated benchmark integration testing
+The system combines an in-memory Redis sorted-set engine for sub-millisecond ranking queries with an asynchronous PostgreSQL persistence layer for cross-tenant historical data, user profiles, streaks, and verifiable achievement awards.
 
 ---
 
-# Technology Stack
+## Architecture Overview
 
-- Python
-- FastAPI
-- Uvicorn
-- Pydantic v2
-- PostgreSQL
-- Redis
-- NumPy
-- asyncpg
-- HTTPX
-- Pytest
-- Docker / Docker Compose
+```
+                                +-------------------------------+
+                                |  FastAPI Gateway (:8000)      |
+                                +---------------+---------------+
+                                                |
+                   +----------------------------+----------------------------+
+                   |                                                         |
+         [Low-Latency Cache / State]                               [Relational Persistence]
+                   |                                                         |
+         +---------v---------+                                     +---------v---------+
+         |    Redis Store    |                                     |   PostgreSQL 16   |
+         | (Sorted Sets ZSET)|                                     |   (Asyncpg/SQLA)  |
+         +-------------------+                                     +-------------------+
+          - Global Leaderboards                                     - User Profiles
+          - Dimension Rankings                                      - Streak History
+          - Delta Improvement                                       - Badge Awards & Evidence
+          - Tenant Indexing                                         - Benchmark Aggregates
+
+```
 
 ---
 
-# Project Structure
+## Core Capabilities
 
-```text
-pod-gamma-platform/
+* Real-Time Leaderboard Engine (Redis): Tracks absolute and relative rankings globally and across dimensions (governance, identity, threat, cloud).
+* Velocity & Improvement Tracking: Computes delta scores against historical snapshots to rank organizations by improvement rate.
+* Benchmarking & Cohort Comparison: Compares tenant performance against peer cohorts segmented by industry sector and company size.
+* Activity & Streak Engine: Implements a strict activity window (completions under 24 hours are debounced, 24–48 hours increment the streak, and >48 hours reset the streak).
+* Verifiable Badge Awards: Unlocks milestone achievements and persists audit proof via structured evidence_ref tokens.
+* Resilience & Rate Limiting: Sliding-window rate limiters per tenant with graceful fallback handling.
+
+---
+
+## Repository Structure
+
+```
+CyBreach-Module_4-Pod-Gamma/
 ├── app/
-│   ├── __init__.py
-│   ├── main.py
-│   ├── api/
-│   │   ├── benchmark.py
-│   │   └── benchmark_repository.py
-│   └── core/
-│       ├── __init__.py
-│       └── rate_limiter.py
+│   ├── api/                   # Router modules (leaderboard, benchmark endpoints)
+│   ├── core/                  # Rate limiting & middleware
+│   ├── db/                    # DB engine, Redis client, declarative base
+│   │   ├── __init__.py        # PostgreSQL AsyncSession & Base declaration
+│   │   └── redis_client.py    # Redis async connection pool
+│   ├── models/                # Pydantic schemas & database entities
+│   │   ├── __init__.py
+│   │   └── schemas.py         # Request/Response validation models
+│   ├── services/              # Business logic (leaderboard, improvement service)
+│   ├── utils/                 # Statistical utilities & structured logging
+│   ├── award_models.py        # SQLAlchemy BadgeAward DB models
+│   ├── award_repository.py    # BadgeAward queries and persistence
+│   ├── badges.py              # Gamification & badge criteria evaluation
+│   ├── config.py              # Centralized environment configuration
+│   ├── main.py                # Unified FastAPI gateway and routing
+│   ├── models.py              # SQLAlchemy UserProfile DB models
+│   ├── streak.py              # 24h/48h streak evaluation logic
+│   ├── tenant_contract.py     # Tenant metadata contract rules
+│   ├── user_models.py         # Relational user entities
+│   └── user_repository.py     # UserProfile queries and persistence
+├── config/
+│   └── badges.json            # Badge definitions, milestones, and icon mappings
 ├── database/
+│   ├── 001_sanitize_leaderboard_snapshot.sql
+│   ├── 002_create_leaderboard_snapshot.sql
 │   ├── 003_create_benchmark_aggregate.sql
-│   ├── 004_seed_benchmark_aggregate.sql
-│   ├── 005_create_benchmark_historical.sql
-│   └── 006_seed_benchmark_historical.sql
-├── tests/
-│   └── test_benchmark.py
-├── requirements.txt
-├── README.md
-└── docker-compose.yml
+│   ├── 005_add_badge_award_evidence.sql
+│   ├── 005_seed_benchmark_aggregate.sql
+│   ├── 006_create_benchmark_historical.sql
+│   ├── 006_update_badge_award_primary_key.sql
+│   ├── 007_create_user_profile.sql
+│   ├── 007_seed_benchmark_historical.sql
+│   ├── redis.conf             # Redis configuration
+│   └── verify_leaderboard.py  # Snapshot verification utility
+├── docs/
+│   ├── integration_guide.md   # Inter-pod integration specifications
+│   └── redis_module.md        # Redis key taxonomy & schema documentation
+├── tests/                     # 72-case automated test suite
+├── Dockerfile                 # Multi-stage production container image
+├── docker-compose.yml         # Local stack orchestration (API + Redis + Postgres)
+├── pytest.ini                 # Pytest runner & warning filter settings
+└── requirements.txt           # Unified dependency manifest
+
 ```
 
 ---
 
-# Prerequisites
+## Environment Setup
 
-Install:
+### 1. Prerequisites
 
-- Python 3.10+
-- Docker Desktop
-- Git
+* Python 3.12 or 3.13
+* Docker & Docker Compose (recommended for dependencies)
+* PostgreSQL 16+ (if running without Docker)
+* Redis 7.x+ (if running without Docker)
 
-Verify:
+### 2. Environment Variables
 
-```cmd
-python --version
-docker --version
-git --version
+Create a .env file in the root directory:
+
+```bash
+# On Windows CMD:
+copy .env.example .env
+
+# On Linux/macOS:
+cp .env.example .env
+
+```
+
+Ensure the configuration matches your local or container setup:
+
+```ini
+APP_HOST=0.0.0.0
+APP_PORT=8000
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/cybreach
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+
 ```
 
 ---
 
-# 1. Clone the Repository
+## How to Run
 
-```cmd
-git clone <YOUR_REPOSITORY_URL>
-cd pod-gamma-platform
-git checkout feature/gamma-api-gateway
+### Method 1: Using Docker Compose (Full Stack)
+
+This is the fastest method to spin up the FastAPI gateway, Redis, and PostgreSQL with all dependencies pre-configured:
+
+```bash
+# Build images and start all containers in detached mode
+docker-compose up --build -d
+
+# Follow application logs
+docker-compose logs -f app
+
+# Stop the stack
+docker-compose down
+
 ```
+
+The gateway will be accessible at http://localhost:8000.
 
 ---
 
-# 2. Create Python Virtual Environment
+### Method 2: Running Locally (Development Mode)
+
+If running the application directly on your host machine:
+
+#### Step 1: Start Redis and PostgreSQL
+
+If you already have Docker installed, start just the backing data stores:
+
+```bash
+docker run --name cybreach-redis -p 6379:6379 -d redis:7-alpine
+docker run --name cybreach-postgres -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=cybreach -p 5432:5432 -d postgres:16-alpine
+
+```
+
+#### Step 2: Set Up Python Virtual Environment
+
+On Windows (CMD):
 
 ```cmd
 python -m venv .venv
-```
-
-Activate on Windows CMD:
-
-```cmd
 .venv\Scripts\activate
+pip install --upgrade pip
+pip install -r requirements.txt
+
+```
+
+On Linux / macOS:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+
+```
+
+#### Step 3: Run Database Migrations
+
+Initialize the schema and seed data into PostgreSQL:
+
+```bash
+psql -U postgres -h localhost -d cybreach -f database/001_sanitize_leaderboard_snapshot.sql
+psql -U postgres -h localhost -d cybreach -f database/002_create_leaderboard_snapshot.sql
+psql -U postgres -h localhost -d cybreach -f database/003_create_benchmark_aggregate.sql
+psql -U postgres -h database/005_add_badge_award_evidence.sql
+psql -U postgres -h localhost -d cybreach -f database/005_seed_benchmark_aggregate.sql
+psql -U postgres -h localhost -d cybreach -f database/006_create_benchmark_historical.sql
+psql -U postgres -h localhost -d cybreach -f database/006_update_badge_award_primary_key.sql
+psql -U postgres -h localhost -d cybreach -f database/007_create_user_profile.sql
+psql -U postgres -h localhost -d cybreach -f database/007_seed_benchmark_historical.sql
+
+```
+
+#### Step 4: Start the FastAPI Server
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
 ```
 
 ---
 
-# 3. Install Python Dependencies
+## Verifying the Service
 
-```cmd
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+Once started, test the application via curl or browse the interactive documentation:
+
+* Swagger UI: http://localhost:8000/docs
+* ReDoc: http://localhost:8000/redoc
+
+### Smoke Test Commands
+
+1. Health Check:
+curl http://localhost:8000/health
+2. Metrics:
+curl http://localhost:8000/metrics
+3. Ingest Analytics (SQL Track):
+curl -X POST http://localhost:8000/api/v1/analytics -H "Content-Type: application/json" -d "{"tenant_id":"tenant_alpha","scores":[{"user_id":"usr_100","score":92.5,"timestamp":"2026-10-06T12:00:00Z"}]}"
+4. Query Global Leaderboard (Redis Track):
+curl http://localhost:8000/api/v1/leaderboard/global
+5. Verify User Streak:
+curl -X POST http://localhost:8000/api/v1/streak/verify -H "Content-Type: application/json" -d "{"user_id":"usr_100","action_timestamp":"2026-10-06T12:00:00Z"}"
+
+---
+
+## Running the Automated Test Suite
+
+Run the full pytest suite (72 unit and integration tests across all microservice layers):
+
+```bash
+pytest -v
+
 ```
 
-Main dependencies:
+To run with test coverage reporting:
 
-```text
-fastapi==0.110.0
-uvicorn==0.28.0
-redis==5.0.3
-pydantic==2.6.4
-numpy
-httpx==0.27.2
-pytest==9.1.1
-```
+```bash
+pytest -v --cov=app --cov-report=term-missing
 
-If installing individually:
-
-```cmd
-python -m pip install fastapi==0.110.0
-python -m pip install uvicorn==0.28.0
-python -m pip install redis==5.0.3
-python -m pip install pydantic==2.6.4
-python -m pip install numpy
-python -m pip install asyncpg
-python -m pip install httpx==0.27.2
-python -m pip install pytest==9.1.1
-```
-
-Verify:
-
-```cmd
-python -m pip show fastapi
-python -m pip show redis
-python -m pip show pydantic
-python -m pip show numpy
-python -m pip show asyncpg
-python -m pip show httpx
-python -m pip show pytest
 ```
 
 ---
 
-# 4. Start Redis
+## API Reference
 
-If the container does not already exist:
+### Health & Metrics
 
-```cmd
-docker run -d --name cybreach-redis -p 6379:6379 redis:7
-```
+* GET /health — Liveness and readiness probe
+* GET /metrics — Prometheus and operational runtime metrics
 
-If it already exists:
+### Leaderboard & Benchmarking (Redis Core)
 
-```cmd
-docker start cybreach-redis
-```
+* GET /api/v1/leaderboard/global — Global absolute rankings
+* GET /api/v1/leaderboard/{dimension} — Absolute rankings by category dimension
+* POST /api/v1/leaderboard/score — Update or increment tenant score
+* GET /api/v1/leaderboard/rank/{tenant_id} — Fetch current rank and score for a tenant
+* GET /api/v1/leaderboard/improvement/global — Top tenant velocity rankings
+* GET /api/v1/leaderboard/improvement/{dimension} — Top velocity rankings for a dimension
+* GET /api/v1/benchmark/compare — Cohort peer comparison analysis
 
-Check:
+### Analytics, Streaks & Gamification (SQL Core)
 
-```cmd
-docker ps
-```
-
-Test Redis:
-
-```cmd
-docker exec cybreach-redis redis-cli ping
-```
-
-Expected:
-
-```text
-PONG
-```
-
----
-
-# 5. Start PostgreSQL
-
-```cmd
-docker start cybreach-postgres
-```
-
-Verify:
-
-```cmd
-docker ps
-```
-
-PostgreSQL should be available on:
-
-```text
-localhost:5432
-```
-
-The database contains the benchmark aggregate and historical benchmark tables.
-
----
-
-# 6. Database Tables
-
-## Benchmark Aggregate
-
-The benchmark aggregate contains:
-
-```text
-industry
-region
-size_band
-peer_count
-peer_25th
-peer_median
-peer_75th
-```
-
-Seeded cohorts include:
-
-```text
-Technology / West / Large
-Finance / West / Small
-Healthcare / West / Large
-```
-
----
-
-# 7. Start FastAPI
-
-```cmd
-.venv\Scripts\activate
-uvicorn app.main:app --reload
-```
-
-The API runs at:
-
-```text
-http://127.0.0.1:8000
-```
-
----
-
-# 8. Swagger API Documentation
-
-Open:
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-Swagger UI can be used to test the API endpoints.
-
----
-
-# API Endpoints
-
-## Health Check
-
-```http
-GET /health
-```
-
-Expected:
-
-```json
-{
-  "status": "ok"
-}
-```
-
----
-
-# Benchmark Percentiles
-
-```http
-POST /benchmark
-```
-
-Example request:
-
-```json
-{
-  "industry": "Technology",
-  "region": "West",
-  "size_band": "Large"
-}
-```
-
-The API retrieves benchmark data from the database.
-
----
-
-# Minimum Peer-Group Enforcement
-
-The anonymity threshold is:
-
-```text
-10 peers
-```
-
-Benchmark cohorts with fewer than 10 peers are blocked to enforce the minimum privacy threshold.
-
-Example test cohort:
-
-```json
-{
-  "industry": "Finance",
-  "region": "West",
-  "size_band": "Small"
-}
-```
-
-This seeded cohort has fewer than 10 peers.
-
-For the benchmark comparison privacy guardrail, the expected response is:
-
-```text
-HTTP 403
-```
-
-with:
-
-```json
-{
-  "detail": "insufficient peers"
-}
-```
-
-A cohort with at least 10 peers can continue to the benchmark comparison logic.
-
----
-
-# Differential Privacy
-
-For cohorts meeting the minimum peer threshold, benchmark percentiles are protected using the **Laplace mechanism**.
-
-The benchmark response provides:
-
-- p25
-- median / p50
-- p75
-
-Repeated requests may return different percentile values because privacy noise is applied.
-
----
-
-# Cross-Regional Comparison
-
-```http
-POST /benchmark/compare
-```
-
-Example:
-
-```json
-{
-  "industry": "Technology",
-  "region": "West",
-  "size_band": "Large"
-}
-```
-
-The endpoint provides:
-
-- Regional peer count
-- Regional median
-- Global peer count
-- Global median
-- Median difference
-
-Example:
-
-```text
-Regional median = 76.4
-Global median   = 72.0
-
-Difference = 4.4
-```
-
-## Privacy Threshold
-
-If the regional cohort has fewer than 10 peers:
-
-```text
-HTTP 403
-```
-
-Example response:
-
-```json
-{
-  "detail": "insufficient peers"
-}
-```
-
-The same privacy threshold is applied when the global benchmark cohort does not meet the minimum peer requirement.
-
-The OpenAPI documentation also exposes the `403` response for this endpoint.
-
----
-
-# Historical Benchmark Trends
-
-```http
-GET /benchmark/trend/TENANT-001
-```
-
-The endpoint provides historical benchmark percentile information for:
-
-```text
-30 days
-60 days
-90 days
-```
-
-Example response:
-
-```json
-[
-  {
-    "days": 30,
-    "p25": 60.2,
-    "median": 71.4,
-    "p75": 82.1
-  },
-  {
-    "days": 60,
-    "p25": 58.3,
-    "median": 69.5,
-    "p75": 80.7
-  },
-  {
-    "days": 90,
-    "p25": 55.8,
-    "median": 67.2,
-    "p75": 78.9
-  }
-]
-```
-
----
-
-# Redis Rate Limiting
-
-The API Gateway uses Redis for request rate limiting.
-
-Configured limit:
-
-```text
-20 requests per minute
-```
-
-Redis stores request counters using time-based keys:
-
-```text
-rate_limit:<client_ip>:<minute>
-```
-
-## Test Rate Limiting
-
-Clear Redis counters:
-
-```cmd
-docker exec cybreach-redis redis-cli FLUSHDB
-```
-
-Expected:
-
-```text
-Requests 1-20  → Allowed
-Request 21      → HTTP 429
-```
-
-Expected error:
-
-```json
-{
-  "detail": "Rate limit exceeded. Maximum 20 requests per minute."
-}
-```
-
----
-
-# Pydantic Validation
-
-FastAPI uses Pydantic v2 for request validation.
-
-Invalid request payloads return:
-
-```text
-HTTP 422
-```
-
-Example invalid request:
-
-```json
-{
-  "industry": "",
-  "region": "West",
-  "size_band": "Large"
-}
-```
-
-The response follows FastAPI's standard validation error schema.
-
----
-
-# Automated Integration Tests
-
-Track 2 includes automated integration tests for the benchmark comparison endpoint.
-
-Tests are located at:
-
-```text
-tests/test_benchmark.py
-```
-
-Run benchmark tests:
-
-```cmd
-python -m pytest tests\test_benchmark.py -v
-```
-
-The tests verify:
-
-- Cohorts with fewer than 10 peers return HTTP 403
-- Valid cohorts with at least 10 peers return HTTP 200
-
-Expected:
-
-```text
-tests/test_benchmark.py::test_benchmark_compare_insufficient_peers PASSED
-tests/test_benchmark.py::test_benchmark_compare_valid_cohort PASSED
-
-2 passed
-```
-
-Run the complete test suite:
-
-```cmd
-python -m pytest -v
-```
-
-Expected:
-
-```text
-2 passed
-```
-
-The HTTPX/Starlette TestClient combination may display a deprecation warning. This warning does not indicate a test failure.
-
----
-
-# Testing Checklist
-
-Before submitting changes, verify:
-
-```text
-[ ] Redis container is running
-[ ] PostgreSQL container is running
-[ ] FastAPI starts successfully
-[ ] Swagger UI opens
-[ ] Pydantic validation returns HTTP 422
-[ ] Peer group < 10 is rejected with HTTP 403
-[ ] Peer group >= 10 returns benchmark statistics
-[ ] Differential privacy is applied
-[ ] Cross-regional comparison works
-[ ] /benchmark/compare returns HTTP 403 for insufficient peers
-[ ] /benchmark/compare returns HTTP 200 for valid cohorts
-[ ] Historical trend endpoint works
-[ ] Redis rate limiting works
-[ ] 21st request returns HTTP 429
-[ ] Automated benchmark tests pass
-```
-
----
-
-# Compile Check
-
-```cmd
-python -m compileall app
-```
-
-There should be no Python compilation errors.
-
----
-
-# Git Workflow
-
-Check changes:
-
-```cmd
-git status
-```
-
-Review changes:
-
-```cmd
-git diff
-```
-
-Add files:
-
-```cmd
-git add .
-```
-
-Commit:
-
-```cmd
-git commit -m "fix: return 403 for insufficient benchmark peers"
-```
-
-Push to the team repository:
-
-```cmd
-git push team-main feature/gamma-api-gateway
-```
-
----
-
-# Environment Variables
-
-For local development, when required:
-
-```text
-REDIS_HOST=localhost
-REDIS_PORT=6379
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/cybreach
-```
-
-When running FastAPI inside Docker Compose, Redis and PostgreSQL hostnames should use their Docker service names.
-
----
-
-# Troubleshooting
-
-## Redis connection error
-
-```cmd
-docker ps
-docker exec cybreach-redis redis-cli ping
-```
-
-Expected:
-
-```text
-PONG
-```
-
-## NumPy not found
-
-```cmd
-python -m pip install numpy
-python -m pip show numpy
-```
-
-## FastAPI does not start
-
-```cmd
-python -m compileall app
-uvicorn app.main:app --reload
-```
-
-## TestClient compatibility error
-
-If `TestClient` reports an error involving the `app` argument:
-
-```cmd
-python -m pip show httpx
-```
-
-Expected:
-
-```text
-Version: 0.27.2
-```
-
-If required:
-
-```cmd
-python -m pip install httpx==0.27.2
-```
-
-Then:
-
-```cmd
-python -m pytest -v
-```
-
-## Port 6379 already in use
-
-```cmd
-docker ps
-docker start cybreach-redis
-```
-
-## Port 8000 already in use
-
-```cmd
-uvicorn app.main:app --reload --port 8001
-```
-
-Then open:
-
-```text
-http://127.0.0.1:8001/docs
-```
-
----
-
-# Track 2 Summary
-
-This branch provides the API Gateway functionality required for the benchmark platform:
-
-1. PostgreSQL-backed benchmark data
-2. Minimum peer-group enforcement
-3. HTTP 403 privacy suppression for insufficient benchmark cohorts
-4. Differential privacy for benchmark percentiles
-5. Cross-regional comparison
-6. Historical benchmark trends
-7. Redis-backed rate limiting
-8. Pydantic v2 request validation
-9. Automated benchmark integration tests
-10. Docker-based Redis and PostgreSQL services
-
----
-
-## Branch
-
-```text
-feature/gamma-api-gateway
-```
-
-## Status
-
-Track 2 API Gateway implementation, privacy enforcement, documentation, and automated testing completed.
+* POST /api/v1/analytics — Ingest streaming analytics payload
+* POST /api/v1/streak/verify — Evaluate activity timestamps and update consecutive streaks
+* GET /user/{user_id}/streak — Retrieve current streak count and last active timestamp
+* GET /user/{user_id}/badges — Retrieve unlocked badges for a user
+* POST /api/v1/achievements/check — Process achievement criteria with evidence_ref validation

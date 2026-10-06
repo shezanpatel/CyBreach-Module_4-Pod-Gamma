@@ -1,3 +1,4 @@
+from app.api.leaderboard import router as leaderboard_router
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 
@@ -8,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from app.core.rate_limiter import check_rate_limit
 from app.api.benchmark import router as benchmark_router
+from app.api.leaderboard import router as leaderboard_router
 from app.models import UserProfile
 from app.streak import update_streak
 from app.badges import award_milestone_badge
@@ -28,6 +30,7 @@ app.add_middleware(
 )
 
 app.include_router(benchmark_router)
+app.include_router(leaderboard_router)
 
 USERS: Dict[str, UserProfile] = {
     "user_1": UserProfile(
@@ -215,3 +218,4 @@ async def verify_streak(payload: StreakVerificationPayload):
         "verified_streak": verified_streak,
         "elapsed_days": elapsed_days,
     }
+app.include_router(leaderboard_router)

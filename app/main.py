@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse
 
 #import app
 from app.api.leaderboard import router as leaderboard_router
+from app.api.benchmark import router as benchmark_router
 from app.config import get_settings
 from app.db.redis_client import close_redis, init_redis
 from app.exceptions import (
@@ -104,6 +105,7 @@ def create_app() -> FastAPI:
 
     _register_exception_handlers(app)
     app.include_router(leaderboard_router)
+    app.include_router(benchmark_router)
 
     return app
 
